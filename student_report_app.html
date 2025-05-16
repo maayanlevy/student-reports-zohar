@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>דוח סיכום תלמיד</title>
+    <!-- Add Noto Sans Hebrew from Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Hebrew:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Add Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: 'Noto Sans Hebrew', sans-serif;
+            font-size: 0.85rem;
+            background-color: #f8f9fa;
+        }
+        .rtl {
+            direction: rtl;
+            text-align: right;
+        }
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin-bottom: 20px;
+            font-size: 0.8rem;
+            line-height: 1.7;
+        }
+        th, td {
+            padding: 6px 10px;
+            text-align: right;
+            border: none;
+        }
+        th {
+            font-weight: 700;
+            position: relative;
+            text-align: center;
+            border-bottom: 2px solid #dee2e6;
+            background-color: transparent;
+            color: #333;
+            padding-bottom: 8px;
+        }
+        /* Remove borders and add zebra striping */
+        .table-borderless tbody tr:nth-child(odd) {
+            background-color: rgba(0, 0, 0, 0.03);
+        }
+        .table-borderless tbody tr:nth-child(even) {
+            background-color: #fff;
+        }
+        .table-borderless td, .table-borderless th {
+            border: none;
+        }
+        .table-borderless tbody tr:hover {
+            background-color: rgba(0, 123, 255, 0.05);
+        }
+        .report-container {
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 25px;
+            background-color: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
+        .controls {
+            margin-bottom: 15px;
+        }
+        .report-title {
+            text-align: center;
+            margin-bottom: 25px;
+            font-weight: 700;
+            font-size: 1.5rem;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #eaeaea;
+        }
+        .comments-section {
+            margin-top: 25px;
+            padding-top: 15px;
+            border-top: 2px solid #eaeaea;
+        }
+        .check-mark {
+            text-align: center;
+            color: #45c1a4;
+            font-size: 0.9rem;
+            line-height: 1;
+        }
+        /* Add style to ensure consistent checkmark appearance */
+        .check-mark i {
+            /* Create a small white background circle behind the checkmark */
+            background-color: white;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            /* Ensure the icon sits on top */
+            position: relative;
+            z-index: 2;
+            /* Remove any transparency */
+            opacity: 1;
+        }
+        .check-column {
+            width: 22%;
+            text-align: center;
+        }
+        .subject-column {
+            width: 28%;
+        }
+        .category-column {
+            width: 28%;
+        }
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+            .report-container {
+                padding: 0;
+                max-width: 100%;
+                box-shadow: none;
+            }
+            body {
+                background-color: white;
+                font-size: 0.8rem;
+            }
+            .table-borderless tbody tr:nth-child(odd) {
+                background-color: rgba(0, 0, 0, 0.03) !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            th {
+                font-weight: 700 !important;
+                color: #333 !important;
+                border-bottom: 2px solid #dee2e6 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            /* Ensure checkmarks print with consistent color */
+            .check-mark i {
+                color: #45c1a4 !important;
+                background-color: white !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+        }
+        .loading-indicator {
+            text-align: center;
+            margin: 15px;
+            display: none;
+        }
+        .student-report {
+            display: none;
+        }
+        
+        /* Make buttons smaller */
+        .btn {
+            font-size: 0.8rem;
+            padding: 0.25rem 0.75rem;
+        }
+        
+        /* Space out buttons */
+        .button-group {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+        
+        /* Make dropdowns and inputs smaller */
+        .form-select, .form-control {
+            font-size: 0.8rem;
+            padding: 0.25rem 0.5rem;
+        }
+        
+        /* Fix RTL dropdown arrow overlap */
+        .form-select {
+            padding-left: 2rem;  /* Add extra padding on the left (appears on right in RTL) */
+            text-indent: 0.5rem; /* Indent text slightly from the right edge */
+        }
+        
+        .form-label {
+            font-size: 0.85rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .card-header h3 {
+            font-size: 1.3rem;
+            margin-bottom: 0;
+        }
+        
+        .card {
+            border-radius: 0.25rem;
+            margin-bottom: 0.75rem;
+            border: none;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        /* Make headers in table smaller */
+        .table thead th {
+            font-size: 0.9rem;
+            padding: 0.75rem;
+        }
+        
+        /* Style for comments section */
+        .comments-section h5 {
+            font-size: 1rem;
+            font-weight: 500;
+            margin-bottom: 12px;
+            color: #3873b6;
+        }
+        
+        .section-label {
+            display: inline-block;
+            background-color: #f1f7ff;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: 500;
+            margin-bottom: 6px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container rtl mt-3">
+        <div class="row no-print">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h3>מערכת הפקת דוחות תלמידים</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-2">
+                            <label for="fileInput" class="form-label">בחר קובץ אקסל:</label>
+                            <input type="file" class="form-control" id="fileInput" accept=".xlsx">
+                        </div>
+                        <div id="loadingIndicator" class="loading-indicator">
+                            <div class="spinner-border text-primary spinner-border-sm" role="status">
+                                <span class="visually-hidden">טוען...</span>
+                            </div>
+                            <p class="mb-0 mt-1">מעבד את קובץ האקסל, אנא המתן...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-3 no-print" id="navigationControls" style="display: none;">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-2">
+                                    <label for="studentSelect" class="form-label">בחר תלמיד:</label>
+                                    <select class="form-select" id="studentSelect"></select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-2 d-flex justify-content-end mt-3">
+                                    <div class="button-group">
+                                        <button id="prevStudent" class="btn btn-secondary">הקודם</button>
+                                        <button id="nextStudent" class="btn btn-secondary">הבא</button>
+                                        <button id="printReport" class="btn btn-primary">הדפסה</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-12">
+                                <div class="mb-2">
+                                    <label for="commentsInput" class="form-label">הערות נוספות:</label>
+                                    <textarea class="form-control" id="commentsInput" rows="2"></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-3">
+            <div class="col-12">
+                <div id="studentReport" class="student-report">
+                    <div class="report-container">
+                        <h2 id="reportTitle" class="report-title"></h2>
+                        <table id="reportTable" class="table table-borderless">
+                            <thead>
+                                <tr>
+                                    <th class="category-column">נושא מתמטי</th>
+                                    <th class="subject-column">נושאי השאלות</th>
+                                    <th class="check-column">שולט היטב</th>
+                                    <th class="check-column">נדרש תרגול נוסף</th>
+                                </tr>
+                            </thead>
+                            <tbody id="reportTableBody">
+                                <!-- Will be filled with JavaScript -->
+                            </tbody>
+                        </table>
+                        <div class="comments-section">
+                            <h5><span class="section-label">הערות נוספות</span></h5>
+                            <p id="reportComments"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables to store app state
+        let studentsData = [];
+        let currentStudentIndex = 0;
+        let questionsData = {
+            broadSubjects: {},
+            subjects: {},
+            maxScores: {}
+        };
+        let studentComments = {};
+        let currentFileHash = ''; // Used to identify the current Excel file
+
+        // DOM elements
+        const fileInput = document.getElementById('fileInput');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const navigationControls = document.getElementById('navigationControls');
+        const studentSelect = document.getElementById('studentSelect');
+        const prevStudentBtn = document.getElementById('prevStudent');
+        const nextStudentBtn = document.getElementById('nextStudent');
+        const printReportBtn = document.getElementById('printReport');
+        const commentsInput = document.getElementById('commentsInput');
+        const studentReport = document.getElementById('studentReport');
+        const reportTitle = document.getElementById('reportTitle');
+        const reportTableBody = document.getElementById('reportTableBody');
+        const reportComments = document.getElementById('reportComments');
+
+        // Listen for file upload
+        fileInput.addEventListener('change', handleFileUpload);
+        studentSelect.addEventListener('change', handleStudentSelect);
+        prevStudentBtn.addEventListener('click', showPreviousStudent);
+        nextStudentBtn.addEventListener('click', showNextStudent);
+        printReportBtn.addEventListener('click', printCurrentReport);
+        commentsInput.addEventListener('input', saveCurrentComment);
+
+        // Generate a simple hash from file data for identification
+        function generateSimpleHash(data) {
+            let hash = 0;
+            const sample = data.slice(0, 1000); // Use first 1000 bytes as a sample
+            for (let i = 0; i < sample.length; i++) {
+                hash = ((hash << 5) - hash) + sample[i];
+                hash = hash & hash; // Convert to 32bit integer
+            }
+            return hash.toString(16);
+        }
+
+        // Get storage key for comments
+        function getCommentsStorageKey() {
+            return `studentReport_comments_${currentFileHash}`;
+        }
+
+        // Load comments from localStorage
+        function loadCommentsFromStorage() {
+            const storageKey = getCommentsStorageKey();
+            const savedComments = localStorage.getItem(storageKey);
+            if (savedComments) {
+                try {
+                    const parsedComments = JSON.parse(savedComments);
+                    // Merge with current comments, preserving any new ones
+                    for (const studentIndex in parsedComments) {
+                        if (studentIndex < studentsData.length) {
+                            studentComments[studentIndex] = parsedComments[studentIndex];
+                        }
+                    }
+                    console.log(`Loaded comments from storage for ${Object.keys(parsedComments).length} students`);
+                } catch (error) {
+                    console.error('Error parsing comments from storage:', error);
+                }
+            }
+        }
+
+        // Save all comments to localStorage
+        function saveCommentsToStorage() {
+            const storageKey = getCommentsStorageKey();
+            localStorage.setItem(storageKey, JSON.stringify(studentComments));
+        }
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            loadingIndicator.style.display = 'block';
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    // Generate hash for this file
+                    currentFileHash = generateSimpleHash(data);
+                    processExcelFile(data);
+                } catch (error) {
+                    alert('אירעה שגיאה בעיבוד הקובץ: ' + error.message);
+                    loadingIndicator.style.display = 'none';
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function processExcelFile(data) {
+            try {
+                // Parse Excel file
+                const workbook = XLSX.read(data, { type: 'array' });
+                
+                // Find the correct sheet (using the 6th sheet or "מיפוי סוף שנה ")
+                let sheetName = "מיפוי סוף שנה ";
+                if (!workbook.Sheets[sheetName]) {
+                    // Try to find the sheet that contains our data
+                    for (const name of workbook.SheetNames) {
+                        if (name.includes("מיפוי") && name.includes("שנה")) {
+                            sheetName = name;
+                            break;
+                        }
+                    }
+                    // If still not found, use the first sheet
+                    if (!workbook.Sheets[sheetName]) {
+                        sheetName = workbook.SheetNames[0];
+                    }
+                }
+                
+                const sheet = workbook.Sheets[sheetName];
+                const sheetData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+                
+                // Extract data from sheet
+                extractDataFromSheet(sheetData);
+                
+                // Load saved comments from localStorage
+                loadCommentsFromStorage();
+                
+                // Populate student dropdown
+                populateStudentDropdown();
+                
+                // Show navigation controls
+                navigationControls.style.display = 'block';
+                
+                // Show first student report
+                showStudentReport(0);
+                
+                loadingIndicator.style.display = 'none';
+                studentReport.style.display = 'block';
+            } catch (error) {
+                alert('אירעה שגיאה בעיבוד הקובץ: ' + error.message);
+                console.error(error);
+                loadingIndicator.style.display = 'none';
+            }
+        }
+
+        function extractDataFromSheet(sheetData) {
+            // Find important rows
+            let broadSubjectsRow = -1;
+            let subjectsRow = -1;
+            let maxScoresRow = -1;
+            let studentStartRow = -1;
+            
+            for (let i = 0; i < sheetData.length; i++) {
+                const row = sheetData[i] || [];
+                const rowString = row.join(' ');
+                
+                if (rowString.includes('נושא מתמטי')) {
+                    broadSubjectsRow = i;
+                } else if (rowString.includes('נושאי השאלות')) {
+                    subjectsRow = i;
+                } else if (rowString.includes('ניקוד לפריט >>')) {
+                    maxScoresRow = i;
+                    studentStartRow = i + 1;
+                    break;
+                }
+            }
+            
+            if (broadSubjectsRow === -1 || subjectsRow === -1 || maxScoresRow === -1) {
+                throw new Error('לא נמצאו כותרות חשובות בקובץ האקסל');
+            }
+            
+            // Extract column indices for important data
+            const studentNameColIdx = 1; // Column B
+            const totalScoreColIdx = 6; // Column G
+            const questionsStartColIdx = 8; // Column I
+            
+            // Extract question data
+            const broadSubjects = sheetData[broadSubjectsRow] || [];
+            const subjects = sheetData[subjectsRow] || [];
+            const maxScores = sheetData[maxScoresRow] || [];
+            
+            // Create mappings for questions
+            for (let i = questionsStartColIdx; i < subjects.length; i++) {
+                if (subjects[i] && maxScores[i] && !isNaN(maxScores[i])) {
+                    questionsData.subjects[i] = subjects[i];
+                    questionsData.maxScores[i] = maxScores[i];
+                    
+                    // Link to broad subject
+                    const broadSubject = broadSubjects[i] || 'אחר';
+                    questionsData.broadSubjects[i] = broadSubject;
+                    
+                    // Initialize the broad subject group if it doesn't exist
+                    if (!questionsData[broadSubject]) {
+                        questionsData[broadSubject] = {};
+                    }
+                    
+                    // Add the subject to its broad subject group
+                    if (!questionsData[broadSubject][subjects[i]]) {
+                        questionsData[broadSubject][subjects[i]] = [];
+                    }
+                    
+                    questionsData[broadSubject][subjects[i]].push(i);
+                }
+            }
+            
+            // Extract student data
+            for (let i = studentStartRow; i < sheetData.length; i++) {
+                const row = sheetData[i];
+                if (!row || !row[studentNameColIdx]) continue;
+                
+                const studentName = row[studentNameColIdx];
+                if (typeof studentName !== 'string' || studentName.trim() === '' || studentName.includes('אחוזי הצלחה')) {
+                    continue;
+                }
+                
+                // Create student object
+                const student = {
+                    name: studentName,
+                    totalScore: row[totalScoreColIdx],
+                    scores: {}
+                };
+                
+                // Extract scores for each question
+                for (const colIdx in questionsData.subjects) {
+                    if (row[colIdx] !== null && row[colIdx] !== undefined && !isNaN(row[colIdx])) {
+                        student.scores[colIdx] = parseFloat(row[colIdx]);
+                    } else {
+                        student.scores[colIdx] = 0;
+                    }
+                }
+                
+                studentsData.push(student);
+            }
+            
+            // Initialize empty comments for all students
+            studentsData.forEach((student, index) => {
+                studentComments[index] = '';
+            });
+        }
+
+        function populateStudentDropdown() {
+            studentSelect.innerHTML = '';
+            studentsData.forEach((student, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = student.name;
+                studentSelect.appendChild(option);
+            });
+        }
+
+        function handleStudentSelect() {
+            const selectedIndex = parseInt(studentSelect.value);
+            showStudentReport(selectedIndex);
+        }
+
+        function showPreviousStudent() {
+            saveCurrentComment();
+            if (currentStudentIndex > 0) {
+                showStudentReport(currentStudentIndex - 1);
+            }
+        }
+
+        function showNextStudent() {
+            saveCurrentComment();
+            if (currentStudentIndex < studentsData.length - 1) {
+                showStudentReport(currentStudentIndex + 1);
+            }
+        }
+
+        function saveCurrentComment() {
+            const commentText = commentsInput.value;
+            studentComments[currentStudentIndex] = commentText;
+            
+            // Save to localStorage whenever a comment is updated
+            saveCommentsToStorage();
+        }
+
+        function showStudentReport(studentIndex) {
+            if (studentIndex < 0 || studentIndex >= studentsData.length) return;
+            
+            // Update current student index
+            currentStudentIndex = studentIndex;
+            studentSelect.value = studentIndex;
+            
+            // Get student data
+            const student = studentsData[studentIndex];
+            
+            // Set report title
+            reportTitle.textContent = `${student.name} - משוב למשימת הערכה סוף שנה`;
+            
+            // Clear table body
+            reportTableBody.innerHTML = '';
+            
+            // Calculate subject mastery
+            const subjectMastery = calculateSubjectMastery(student);
+            
+            // Populate report table
+            const processedSubjects = new Set();
+            
+            // Create array to track visual row indices for each broad subject
+            const broadSubjectRows = {};
+            
+            // Group by broad subject
+            for (const broadSubject in questionsData) {
+                if (broadSubject === 'broadSubjects' || broadSubject === 'subjects' || broadSubject === 'maxScores') {
+                    continue;
+                }
+                
+                const subjects = questionsData[broadSubject];
+                if (!subjects || Object.keys(subjects).length === 0) continue;
+                
+                // Initialize row counter for this broad subject
+                broadSubjectRows[broadSubject] = [];
+                
+                let isFirstInGroup = true;
+                let rowCount = 0;
+                
+                // For each subject in this broad subject
+                for (const subject in subjects) {
+                    // Skip subjects we've already processed
+                    if (processedSubjects.has(subject)) continue;
+                    processedSubjects.add(subject);
+                    
+                    const questionIndices = subjects[subject];
+                    if (!questionIndices || questionIndices.length === 0) continue;
+                    
+                    // Create row
+                    const row = document.createElement('tr');
+                    
+                    // Store this row in the broadSubjectRows array
+                    broadSubjectRows[broadSubject].push(row);
+                    
+                    // Add broad subject cell (only for first row in group)
+                    const broadSubjectCell = document.createElement('td');
+                    if (isFirstInGroup) {
+                        broadSubjectCell.textContent = broadSubject;
+                        broadSubjectCell.rowSpan = Object.keys(subjects).length;
+                        broadSubjectCell.style.fontWeight = "700";
+                        isFirstInGroup = false;
+                    } else {
+                        broadSubjectCell.style.display = 'none';
+                    }
+                    row.appendChild(broadSubjectCell);
+                    
+                    // Add subject cell
+                    const subjectCell = document.createElement('td');
+                    subjectCell.textContent = subject;
+                    row.appendChild(subjectCell);
+                    
+                    // Add mastery cells
+                    const goodMasteryCell = document.createElement('td');
+                    const needsPracticeCell = document.createElement('td');
+                    
+                    goodMasteryCell.className = 'check-mark';
+                    needsPracticeCell.className = 'check-mark';
+                    
+                    if (subjectMastery[subject] && subjectMastery[subject].masteryPercentage >= 50) {
+                        goodMasteryCell.innerHTML = '<i class="fas fa-check-circle"></i>';
+                    }
+                    
+                    if (subjectMastery[subject] && subjectMastery[subject].masteryPercentage < 50) {
+                        needsPracticeCell.innerHTML = '<i class="fas fa-check-circle"></i>';
+                    }
+                    
+                    row.appendChild(goodMasteryCell);
+                    row.appendChild(needsPracticeCell);
+                    
+                    // Add row to table
+                    reportTableBody.appendChild(row);
+                    rowCount++;
+                }
+                
+                // If no subjects were added for this broad subject, add a placeholder row
+                if (rowCount === 0 && Object.keys(subjects).length > 0) {
+                    const row = document.createElement('tr');
+                    
+                    // Store this row in the broadSubjectRows array
+                    broadSubjectRows[broadSubject].push(row);
+                    
+                    // Add broad subject cell
+                    const broadSubjectCell = document.createElement('td');
+                    broadSubjectCell.textContent = broadSubject;
+                    broadSubjectCell.style.fontWeight = "700";
+                    row.appendChild(broadSubjectCell);
+                    
+                    // Add empty cells
+                    for (let i = 0; i < 3; i++) {
+                        const cell = document.createElement('td');
+                        row.appendChild(cell);
+                    }
+                    
+                    reportTableBody.appendChild(row);
+                }
+            }
+            
+            // Apply zebra striping to the entire table
+            const allRows = reportTableBody.querySelectorAll('tr');
+            allRows.forEach((row, index) => {
+                if (index % 2 === 0) {
+                    row.style.backgroundColor = '#fff';
+                } else {
+                    row.style.backgroundColor = 'rgba(0, 0, 0, 0.03)';
+                }
+            });
+            
+            // Set comments
+            const comments = studentComments[studentIndex] || '';
+            commentsInput.value = comments;
+            reportComments.textContent = comments;
+            
+            // Update navigation buttons
+            prevStudentBtn.disabled = studentIndex === 0;
+            nextStudentBtn.disabled = studentIndex === studentsData.length - 1;
+        }
+
+        function calculateSubjectMastery(student) {
+            const result = {};
+            
+            // Group questions by subject
+            const subjectQuestions = {};
+            
+            for (const colIdx in questionsData.subjects) {
+                const subject = questionsData.subjects[colIdx];
+                if (!subjectQuestions[subject]) {
+                    subjectQuestions[subject] = [];
+                }
+                subjectQuestions[subject].push(colIdx);
+            }
+            
+            // Calculate mastery for each subject
+            for (const subject in subjectQuestions) {
+                const questionIndices = subjectQuestions[subject];
+                let totalMaxScore = 0;
+                let totalStudentScore = 0;
+                
+                questionIndices.forEach(idx => {
+                    totalMaxScore += parseFloat(questionsData.maxScores[idx]) || 0;
+                    totalStudentScore += parseFloat(student.scores[idx]) || 0;
+                });
+                
+                // Calculate mastery percentage
+                const masteryPercentage = totalMaxScore > 0 ? (totalStudentScore / totalMaxScore) * 100 : 0;
+                
+                result[subject] = {
+                    totalMaxScore,
+                    totalStudentScore,
+                    masteryPercentage
+                };
+            }
+            
+            return result;
+        }
+
+        function printCurrentReport() {
+            // Make sure comments are updated before printing
+            saveCurrentComment();
+            reportComments.textContent = studentComments[currentStudentIndex] || '';
+            
+            // Print the report
+            window.print();
+        }
+    </script>
+</body>
+</html> 
