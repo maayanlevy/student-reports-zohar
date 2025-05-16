@@ -12,6 +12,7 @@
     <!-- Add Font Awesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/idb@7/build/umd.js"></script>
     <style>
         body {
             font-family: 'Noto Sans Hebrew', sans-serif;
@@ -283,10 +284,166 @@
             background-color: #6c757d !important;
             border-color: #6c757d !important;
         }
+        
+        /* State Management Sidebar */
+        .sidebar {
+            position: fixed;
+            right: 0;
+            top: 0;
+            height: 100%;
+            width: 250px;
+            background-color: #f8f9fa;
+            border-left: 1px solid #e3e3e3;
+            padding: 15px;
+            overflow-y: auto;
+            z-index: 1000;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+        }
+        
+        .sidebar.open {
+            transform: translateX(0);
+        }
+        
+        .sidebar-toggle {
+            position: fixed;
+            right: 20px;
+            bottom: 20px;
+            z-index: 1001;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background-color: #329da6;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        
+        .state-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .state-item {
+            padding: 10px;
+            border-bottom: 1px solid #e3e3e3;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .state-item:hover {
+            background-color: #f0f0f0;
+        }
+        
+        .state-item.active {
+            background-color: #e6f7f8;
+            border-right: 3px solid #329da6;
+        }
+        
+        .state-tools {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .state-name {
+            flex-grow: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .sidebar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #e3e3e3;
+            padding-bottom: 10px;
+        }
+        
+        .state-input-container {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+        
+        .state-input {
+            flex-grow: 1;
+        }
+        
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+            }
+        }
+        
+        .main-content {
+            transition: margin-right 0.3s ease;
+        }
+        
+        .main-content.sidebar-open {
+            margin-right: 250px;
+        }
+        
+        /* Add styles for the new elements */
+        .state-actions {
+            margin-top: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .state-list-header {
+            margin-top: 10px;
+            margin-bottom: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #e3e3e3;
+        }
     </style>
 </head>
 <body>
-    <div class="container rtl mt-3">
+    <div class="sidebar" id="stateSidebar">
+        <div class="sidebar-header">
+            <h5>משימות הערכה שמורות</h5>
+            <button class="btn btn-sm btn-outline-secondary close-sidebar">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <!-- State name input -->
+        <div class="state-input-container">
+            <input type="text" class="form-control form-control-sm state-input" id="stateNameInput" placeholder="שם משימת הערכה">
+            <button class="btn btn-sm btn-primary" id="saveStateBtn">שמור</button>
+        </div>
+        
+        <!-- Add state management buttons -->
+        <div class="state-actions">
+            <button class="btn btn-sm btn-outline-primary mb-2 w-100" id="saveAsBtn">
+                <i class="fas fa-save"></i> שמור כ...
+            </button>
+            <button class="btn btn-sm btn-outline-success mb-2 w-100" id="resaveBtn">
+                <i class="fas fa-sync-alt"></i> עדכן משימת הערכה נוכחית
+            </button>
+            <button class="btn btn-sm btn-outline-secondary mb-3 w-100" id="newStateBtn">
+                <i class="fas fa-file"></i> משימת הערכה חדשה
+            </button>
+        </div>
+        
+        <div class="state-list-header">
+            <h6>משימות הערכה קיימות</h6>
+        </div>
+        <ul class="state-list" id="stateList"></ul>
+    </div>
+    
+    <div class="sidebar-toggle" id="sidebarToggle">
+        <i class="fas fa-save"></i>
+    </div>
+    
+    <div class="container rtl mt-3 main-content" id="mainContent">
         <div class="row no-print">
             <div class="col-12">
                 <div class="card">
@@ -384,6 +541,9 @@
         };
         let studentComments = {};
         let currentFileHash = ''; // Used to identify the current Excel file
+        let currentStateName = 'משימת הערכה ללא שם'; // Default state name
+        let currentStateId = null; // Current state ID
+        let currentFileData = null; // Store the current file data
 
         // DOM elements
         const fileInput = document.getElementById('fileInput');
@@ -398,6 +558,335 @@
         const reportTitle = document.getElementById('reportTitle');
         const reportTableBody = document.getElementById('reportTableBody');
         const reportComments = document.getElementById('reportComments');
+        
+        // State management elements
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const stateSidebar = document.getElementById('stateSidebar');
+        const closeSidebarBtn = document.querySelector('.close-sidebar');
+        const stateList = document.getElementById('stateList');
+        const stateNameInput = document.getElementById('stateNameInput');
+        const saveStateBtn = document.getElementById('saveStateBtn');
+        const saveAsBtn = document.getElementById('saveAsBtn');
+        const resaveBtn = document.getElementById('resaveBtn');
+        const newStateBtn = document.getElementById('newStateBtn');
+        const mainContent = document.getElementById('mainContent');
+
+        // Initialize IndexedDB
+        let db;
+        
+        // Open/initialize the database
+        async function initDB() {
+            db = await idb.openDB('StudentReportsDB', 1, {
+                upgrade(db) {
+                    // Create a store for saved states
+                    const stateStore = db.createObjectStore('states', { 
+                        keyPath: 'id', 
+                        autoIncrement: true 
+                    });
+                    stateStore.createIndex('name', 'name');
+                    stateStore.createIndex('timestamp', 'timestamp');
+                    
+                    // Create a store for file data
+                    db.createObjectStore('files', { keyPath: 'id' });
+                }
+            });
+            
+            // Load saved states after DB initialization
+            loadSavedStates();
+        }
+        
+        // Save current state to IndexedDB
+        async function saveCurrentState() {
+            if (!currentFileData) {
+                alert('אנא טען קובץ תחילה');
+                return;
+            }
+            
+            const stateName = stateNameInput.value.trim() || currentStateName;
+            
+            try {
+                // Create a simplified version of the data for storage
+                // This avoids circular references and complex objects
+                const simplifiedStudentsData = studentsData.map(student => ({
+                    name: student.name,
+                    totalScore: student.totalScore,
+                    scores: {...student.scores} // Create a shallow copy of scores
+                }));
+                
+                // Simplify the questions data
+                const simplifiedQuestionsData = {
+                    broadSubjects: {...questionsData.broadSubjects},
+                    subjects: {...questionsData.subjects},
+                    maxScores: {...questionsData.maxScores}
+                };
+                
+                // Add the other data items (simplified)
+                Object.keys(questionsData).forEach(key => {
+                    if (key !== 'broadSubjects' && key !== 'subjects' && key !== 'maxScores') {
+                        simplifiedQuestionsData[key] = {};
+                        
+                        // Copy the nested structure while avoiding circular references
+                        Object.keys(questionsData[key] || {}).forEach(subKey => {
+                            simplifiedQuestionsData[key][subKey] = [...(questionsData[key][subKey] || [])];
+                        });
+                    }
+                });
+                
+                // Create a clean state object with safe data structures
+                const stateObj = {
+                    name: stateName,
+                    fileHash: currentFileHash,
+                    studentsData: simplifiedStudentsData,
+                    questionsData: simplifiedQuestionsData,
+                    comments: {...studentComments},
+                    currentStudentIndex: currentStudentIndex,
+                    timestamp: new Date().getTime()
+                };
+                
+                // If updating an existing state, include its ID
+                if (currentStateId) {
+                    stateObj.id = currentStateId;
+                }
+                
+                // Start a transaction
+                const tx = db.transaction(['states', 'files'], 'readwrite');
+                
+                // Save/update the state
+                let stateId;
+                if (currentStateId) {
+                    await tx.objectStore('states').put(stateObj);
+                    stateId = currentStateId;
+                } else {
+                    stateId = await tx.objectStore('states').add(stateObj);
+                    currentStateId = stateId;
+                }
+                
+                // Always save the file data to ensure it exists
+                // This helps prevent the "file not found" error when loading states
+                await tx.objectStore('files').put({
+                    id: currentFileHash,
+                    data: currentFileData
+                });
+                
+                await tx.done;
+                
+                // Update UI
+                currentStateName = stateName;
+                stateNameInput.value = '';
+                loadSavedStates();
+                
+                alert('משימת ההערכה נשמרה בהצלחה');
+            } catch (error) {
+                console.error('Error saving state:', error);
+                alert('שגיאה בשמירת משימת ההערכה: ' + error.message);
+            }
+        }
+        
+        // Load all saved states
+        async function loadSavedStates() {
+            try {
+                const states = await db.getAll('states');
+                
+                // Sort states by timestamp (newest first)
+                states.sort((a, b) => b.timestamp - a.timestamp);
+                
+                // Clear the list
+                stateList.innerHTML = '';
+                
+                // Add each state to the list
+                states.forEach(state => {
+                    const li = document.createElement('li');
+                    li.className = 'state-item';
+                    if (currentStateId === state.id) {
+                        li.classList.add('active');
+                    }
+                    
+                    // Format date
+                    const date = new Date(state.timestamp);
+                    const formattedDate = `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+                    
+                    li.innerHTML = `
+                        <div class="state-name" title="${state.name}">${state.name}</div>
+                        <small class="text-muted">${formattedDate}</small>
+                        <div class="state-tools">
+                            <button class="btn btn-sm btn-outline-danger delete-state" data-id="${state.id}">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    `;
+                    
+                    // Add click event to load the state
+                    li.addEventListener('click', (e) => {
+                        // Don't load if delete button was clicked
+                        if (e.target.closest('.delete-state')) return;
+                        loadState(state.id);
+                    });
+                    
+                    stateList.appendChild(li);
+                });
+                
+                // Add delete event listeners
+                document.querySelectorAll('.delete-state').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const stateId = parseInt(btn.dataset.id);
+                        deleteState(stateId);
+                    });
+                });
+            } catch (error) {
+                console.error('Error loading states:', error);
+            }
+        }
+        
+        // Load a specific state
+        async function loadState(stateId) {
+            try {
+                // Get the state data
+                const state = await db.get('states', stateId);
+                if (!state) {
+                    alert('משימת ההערכה לא נמצאה');
+                    return;
+                }
+                
+                try {
+                    // Get the file data with better error handling
+                    const fileData = await db.get('files', state.fileHash);
+                    
+                    if (!fileData || !fileData.data) {
+                        // Try to recover from the error - we have state data but no file data
+                        // We can still show the reports without the original file
+                        console.warn('File data not found for state:', state.name);
+                        
+                        currentFileHash = state.fileHash;
+                        studentsData = state.studentsData;
+                        questionsData = state.questionsData;
+                        studentComments = {...state.comments};
+                        currentStudentIndex = state.currentStudentIndex;
+                        currentStateName = state.name;
+                        currentStateId = state.id;
+                        currentFileData = null; // We don't have the original file data
+                        
+                        // Update UI
+                        populateStudentDropdown();
+                        showStudentReport(currentStudentIndex);
+                        
+                        // Update state name input with current name
+                        stateNameInput.value = currentStateName;
+                        
+                        // Show navigation controls
+                        navigationControls.style.display = 'block';
+                        studentReport.style.display = 'block';
+                        
+                        // Update active state in list and alert the user about partial recovery
+                        updateActiveStateInList(stateId);
+                        alert('נתוני משימת ההערכה שוחזרו ללא קובץ האקסל המקורי. ניתן לראות דוחות אך לא ניתן לשמור שינויים חדשים.');
+                        return;
+                    }
+                    
+                    // Normal state restoration with file data
+                    currentFileHash = state.fileHash;
+                    studentsData = state.studentsData;
+                    questionsData = state.questionsData;
+                    studentComments = {...state.comments};
+                    currentStudentIndex = state.currentStudentIndex;
+                    currentStateName = state.name;
+                    currentStateId = state.id;
+                    currentFileData = fileData.data;
+                    
+                    // Update UI
+                    populateStudentDropdown();
+                    showStudentReport(currentStudentIndex);
+                    
+                    // Update state name input with current name
+                    stateNameInput.value = currentStateName;
+                    
+                    // Show navigation controls
+                    navigationControls.style.display = 'block';
+                    studentReport.style.display = 'block';
+                    
+                    // Update active state in list
+                    updateActiveStateInList(stateId);
+                    
+                } catch (fileError) {
+                    console.error('Error retrieving file data:', fileError);
+                    alert('שגיאה בטעינת קובץ משימת ההערכה. נסה לטעון מחדש.');
+                }
+            } catch (error) {
+                console.error('Error loading state:', error);
+                alert('שגיאה בטעינת משימת ההערכה: ' + error.message);
+            }
+        }
+        
+        // Helper function to update active state in the list
+        function updateActiveStateInList(stateId) {
+            const stateItems = document.querySelectorAll('.state-item');
+            stateItems.forEach(item => {
+                item.classList.remove('active');
+                const deleteBtn = item.querySelector('.delete-state');
+                if (deleteBtn && parseInt(deleteBtn.dataset.id) === stateId) {
+                    item.classList.add('active');
+                }
+            });
+            
+            // Close sidebar on mobile
+            if (window.innerWidth <= 768) {
+                toggleSidebar();
+            }
+        }
+        
+        // Delete a state
+        async function deleteState(stateId) {
+            if (!confirm('האם אתה בטוח שברצונך למחוק מצב זה?')) {
+                return;
+            }
+            
+            try {
+                await db.delete('states', stateId);
+                
+                // If we're deleting the current state, reset the UI
+                if (currentStateId === stateId) {
+                    resetApp();
+                }
+                
+                // Reload the state list
+                loadSavedStates();
+            } catch (error) {
+                console.error('Error deleting state:', error);
+                alert('שגיאה במחיקת המצב: ' + error.message);
+            }
+        }
+        
+        // Reset the app
+        function resetApp() {
+            studentsData = [];
+            currentStudentIndex = 0;
+            questionsData = {
+                broadSubjects: {},
+                subjects: {},
+                maxScores: {}
+            };
+            studentComments = {};
+            currentFileHash = '';
+            currentStateName = 'משימת הערכה ללא שם';
+            currentStateId = null;
+            currentFileData = null;
+            
+            // Reset UI
+            navigationControls.style.display = 'none';
+            studentReport.style.display = 'none';
+            fileInput.value = '';
+        }
+        
+        // Toggle sidebar
+        function toggleSidebar() {
+            stateSidebar.classList.toggle('open');
+            mainContent.classList.toggle('sidebar-open');
+        }
+        
+        // Event listeners for sidebar
+        sidebarToggle.addEventListener('click', toggleSidebar);
+        closeSidebarBtn.addEventListener('click', toggleSidebar);
+        saveStateBtn.addEventListener('click', saveCurrentState);
 
         // Listen for file upload
         fileInput.addEventListener('change', handleFileUpload);
@@ -406,6 +895,14 @@
         nextStudentBtn.addEventListener('click', showNextStudent);
         printReportBtn.addEventListener('click', printCurrentReport);
         commentsInput.addEventListener('input', saveCurrentComment);
+
+        // Add event listeners for new buttons
+        saveAsBtn.addEventListener('click', saveAsNewState);
+        resaveBtn.addEventListener('click', updateCurrentState);
+        newStateBtn.addEventListener('click', startNewState);
+
+        // Initialize the database when the page loads
+        document.addEventListener('DOMContentLoaded', initDB);
 
         // Generate a simple hash from file data for identification
         function generateSimpleHash(data) {
@@ -459,8 +956,13 @@
             reader.onload = function(e) {
                 try {
                     const data = new Uint8Array(e.target.result);
+                    // Store the file data for saving states
+                    currentFileData = data;
                     // Generate hash for this file
                     currentFileHash = generateSimpleHash(data);
+                    // Reset state info for new file
+                    currentStateId = null;
+                    currentStateName = 'משימת הערכה ללא שם';
                     processExcelFile(data);
                 } catch (error) {
                     alert('אירעה שגיאה בעיבוד הקובץ: ' + error.message);
@@ -833,6 +1335,77 @@
             
             // Print the report
             window.print();
+        }
+
+        // Function to save as a new state (create a copy)
+        async function saveAsNewState() {
+            if (!currentFileData) {
+                alert('אנא טען קובץ תחילה');
+                return;
+            }
+            
+            // Prompt for a new name with the current name as default
+            const newName = prompt('הזן שם למשימת ההערכה החדשה:', currentStateName + ' - עותק');
+            if (!newName) return; // User cancelled
+            
+            try {
+                // Temporarily remove the current state ID to force a new save
+                const previousStateId = currentStateId;
+                currentStateId = null;
+                stateNameInput.value = newName;
+                
+                // Call the save function
+                await saveCurrentState();
+                
+                // Show success message
+                alert('משימת ההערכה נשמרה בהצלחה כעותק חדש');
+            } catch (error) {
+                console.error('Error saving new state:', error);
+                alert('שגיאה בשמירת משימת ההערכה החדשה: ' + error.message);
+            }
+        }
+        
+        // Function to update the current state
+        async function updateCurrentState() {
+            if (!currentStateId) {
+                alert('אין משימת הערכה נוכחית לעדכון. אנא שמור משימת הערכה חדשה תחילה.');
+                return;
+            }
+            
+            try {
+                // Set the input to the current name
+                stateNameInput.value = currentStateName;
+                
+                // Call the save function
+                await saveCurrentState();
+                
+                // Show success message
+                alert('משימת ההערכה עודכנה בהצלחה');
+            } catch (error) {
+                console.error('Error updating state:', error);
+                alert('שגיאה בעדכון משימת ההערכה: ' + error.message);
+            }
+        }
+        
+        // Function to start a new state
+        function startNewState() {
+            if (!confirm('האם אתה בטוח שברצונך להתחיל משימת הערכה חדשה? כל השינויים שלא נשמרו יאבדו.')) {
+                return;
+            }
+            
+            // Reset the app state
+            resetApp();
+            
+            // Clear the file input to allow selecting a new file
+            fileInput.value = '';
+            
+            // Update the UI
+            alert('משימת הערכה חדשה התחילה. אנא טען קובץ חדש.');
+            
+            // Close the sidebar on mobile
+            if (window.innerWidth <= 768) {
+                toggleSidebar();
+            }
         }
     </script>
 </body>
