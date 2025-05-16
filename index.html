@@ -751,10 +751,9 @@
                 // Clear the list
                 stateList.innerHTML = '';
                 
-                // Get states for the current user
+                // Get states for the current user - simplified query that doesn't require a composite index
                 const snapshot = await firestore.collection('states')
                     .where('userId', '==', currentUser.uid)
-                    .orderBy('timestamp', 'desc')
                     .get();
                 
                 if (snapshot.empty) {
@@ -762,10 +761,26 @@
                     return;
                 }
                 
-                // Add each state to the list
+                // Get all states and manually sort them
+                let states = [];
                 snapshot.forEach(doc => {
-                    const state = doc.data();
-                    const stateId = doc.id;
+                    states.push({
+                        id: doc.id,
+                        data: doc.data()
+                    });
+                });
+                
+                // Sort states by timestamp (newest first) after retrieving them
+                states.sort((a, b) => {
+                    const timeA = a.data.timestamp ? a.data.timestamp.toDate().getTime() : 0;
+                    const timeB = b.data.timestamp ? b.data.timestamp.toDate().getTime() : 0;
+                    return timeB - timeA;
+                });
+                
+                // Add each state to the list
+                states.forEach(state => {
+                    const stateId = state.id;
+                    const stateData = state.data;
                     
                     const li = document.createElement('li');
                     li.className = 'state-item';
@@ -774,11 +789,11 @@
                     }
                     
                     // Format date
-                    const timestamp = state.timestamp ? state.timestamp.toDate() : new Date();
+                    const timestamp = stateData.timestamp ? stateData.timestamp.toDate() : new Date();
                     const formattedDate = `${timestamp.getDate()}/${timestamp.getMonth() + 1}/${timestamp.getFullYear()}`;
                     
                     li.innerHTML = `
-                        <div class="state-name" title="${state.name}">${state.name}</div>
+                        <div class="state-name" title="${stateData.name}">${stateData.name}</div>
                         <small class="text-muted">${formattedDate}</small>
                         <div class="state-tools">
                             <button class="btn btn-sm btn-outline-danger delete-state" data-id="${stateId}">
