@@ -174,10 +174,20 @@
             padding: 0.25rem 0.5rem;
         }
         
-        /* Fix RTL dropdown arrow overlap */
+        /* Fix RTL dropdown arrow overlap - stronger approach */
         .form-select {
-            padding-left: 2rem;  /* Add extra padding on the left (appears on right in RTL) */
-            text-indent: 0.5rem; /* Indent text slightly from the right edge */
+            padding-left: 2.5rem !important;  /* Force extra padding on the left side */
+            padding-right: 1rem !important;   /* Add padding on right side too */
+            text-align: right !important;     /* Force right alignment */
+        }
+        
+        /* Add a custom style to the student select specifically */
+        #studentSelect {
+            direction: rtl;
+            position: relative;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap
         }
         
         .form-label {
@@ -219,6 +229,48 @@
             font-weight: 500;
             margin-bottom: 6px;
         }
+        
+        /* Override Bootstrap's select styling for RTL */
+        .rtl-select-wrapper {
+            position: relative;
+            width: 100%;
+        }
+        
+        .rtl-select-wrapper select {
+            width: 100%;
+            padding-right: 1rem;
+            padding-left: 2.5rem; /* More space for the arrow */
+            appearance: none;  /* Remove default appearance */
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-color: #fff;
+            border: 1px solid #ced4da;
+            border-radius: 0.25rem;
+            font-size: 0.8rem;
+            height: calc(1.5em + 0.5rem + 2px);
+            text-align: right;
+            direction: rtl;
+        }
+        
+        /* Custom dropdown arrow */
+        .rtl-select-wrapper::after {
+            content: '';
+            position: absolute;
+            left: 10px;  /* Position from left (appears at right in RTL) */
+            top: 50%;
+            transform: translateY(-50%);
+            width: 0;
+            height: 0;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 5px solid #343a40;
+            pointer-events: none;  /* Make sure it doesn't interfere with clicking */
+        }
+        
+        /* Make the standard form-select have no default arrow in our custom wrapper */
+        .rtl-select-wrapper .form-select {
+            background-image: none;
+        }
     </style>
 </head>
 <body>
@@ -253,7 +305,9 @@
                             <div class="col-md-6">
                                 <div class="mb-2">
                                     <label for="studentSelect" class="form-label">בחר תלמיד:</label>
-                                    <select class="form-select" id="studentSelect"></select>
+                                    <div class="rtl-select-wrapper">
+                                        <select class="form-select" id="studentSelect"></select>
+                                    </div>
                                 </div>
                             </div>
                             <div class="col-md-6">
