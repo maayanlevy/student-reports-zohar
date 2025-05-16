@@ -535,7 +535,7 @@
     </div>
 
     <script>
-        // Firebase configuration - replace with your own config values
+        // Firebase configuration
         const firebaseConfig = {
             apiKey: "AIzaSyBBTAUHqo-KafN5fsM6kDXksMNxeXerWXM",
             authDomain: "evaluation-8d952.firebaseapp.com",
@@ -551,14 +551,32 @@
         
         // Get Firebase services
         const firestore = firebase.firestore();
-        const auth = firebase.auth();
         
         // Initialize IndexedDB for local file storage
         let localDB;
         
-        // Anonymous sign-in - this allows us to secure data per user without requiring login
-        let currentUser = null;
-        let userSignedIn = false;
+        // User identification
+        let currentUserId = null;
+        let userInitialized = false;
+        
+        // Generate a unique user ID if not already present
+        function getOrCreateUserId() {
+            // Try to get existing user ID from localStorage
+            let userId = localStorage.getItem('evaluationAppUserId');
+            
+            if (!userId) {
+                // Generate a new user ID - this is a simple UUID-like generator
+                userId = 'user_' + Math.random().toString(36).substring(2, 15) + 
+                         Math.random().toString(36).substring(2, 15);
+                // Save it to localStorage for future use
+                localStorage.setItem('evaluationAppUserId', userId);
+                console.log('Created new user ID:', userId);
+            } else {
+                console.log('Using existing user ID:', userId);
+            }
+            
+            return userId;
+        }
         
         // Initialize IndexedDB
         async function initIndexedDB() {
@@ -571,38 +589,23 @@
             console.log('IndexedDB initialized for local file storage');
         }
         
-        // Sign in anonymously on page load
+        // Initialize the application
         async function initApp() {
             try {
                 // Initialize local storage first
                 await initIndexedDB();
                 
-                // Then sign in to Firebase
-                const userCredential = await auth.signInAnonymously();
-                currentUser = userCredential.user;
-                userSignedIn = true;
-                console.log('Signed in anonymously with ID:', currentUser.uid);
+                // Set up user identification
+                currentUserId = getOrCreateUserId();
+                userInitialized = true;
                 
-                // After signing in, load states
+                // After initialization, load states
                 loadSavedStates();
             } catch (error) {
                 console.error('Error during initialization:', error);
-                alert('אירעה שגיאה בהתחברות: ' + error.message);
+                alert('אירעה שגיאה באתחול: ' + error.message);
             }
         }
-        
-        // Auth state change listener
-        auth.onAuthStateChanged((user) => {
-            if (user) {
-                currentUser = user;
-                userSignedIn = true;
-                // Load the states when auth state changes and user is signed in
-                loadSavedStates();
-            } else {
-                currentUser = null;
-                userSignedIn = false;
-            }
-        });
         
         // Global variables to store app state
         let studentsData = [];
@@ -654,8 +657,8 @@
                 return;
             }
             
-            if (!userSignedIn) {
-                alert('אנא המתן להתחברות...');
+            if (!userInitialized) {
+                alert('אנא המתן לאתחול המערכת...');
                 return;
             }
             
@@ -707,7 +710,7 @@
                     comments: studentComments,
                     currentStudentIndex: currentStudentIndex,
                     timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                    userId: currentUser.uid
+                    userId: currentUserId  // Using our consistent user ID instead of Firebase Auth
                 };
                 
                 // Save the state to Firestore
@@ -742,8 +745,8 @@
         
         // Load saved states from Firebase
         async function loadSavedStates() {
-            if (!userSignedIn) {
-                console.log('User not signed in yet, will load states after login');
+            if (!userInitialized) {
+                console.log('User not initialized yet, will load states after initialization');
                 return;
             }
             
@@ -753,7 +756,7 @@
                 
                 // Get states for the current user - simplified query that doesn't require a composite index
                 const snapshot = await firestore.collection('states')
-                    .where('userId', '==', currentUser.uid)
+                    .where('userId', '==', currentUserId)
                     .get();
                 
                 if (snapshot.empty) {
@@ -828,8 +831,8 @@
         
         // Load a state
         async function loadState(stateId) {
-            if (!userSignedIn) {
-                alert('אנא המתן להתחברות...');
+            if (!userInitialized) {
+                alert('אנא המתן לאתחול המערכת...');
                 return;
             }
             
@@ -922,8 +925,8 @@
         
         // Delete a state
         async function deleteState(stateId) {
-            if (!userSignedIn) {
-                alert('אנא המתן להתחברות...');
+            if (!userInitialized) {
+                alert('אנא המתן לאתחול המערכת...');
                 return;
             }
             
@@ -1517,4 +1520,5 @@
         }
     </script>
 </body>
+</html> 
 </html> 
