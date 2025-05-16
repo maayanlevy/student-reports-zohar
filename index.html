@@ -555,28 +555,8 @@
         // Initialize IndexedDB for local file storage
         let localDB;
         
-        // User identification
-        let currentUserId = null;
-        let userInitialized = false;
-        
-        // Generate a unique user ID if not already present
-        function getOrCreateUserId() {
-            // Try to get existing user ID from localStorage
-            let userId = localStorage.getItem('evaluationAppUserId');
-            
-            if (!userId) {
-                // Generate a new user ID - this is a simple UUID-like generator
-                userId = 'user_' + Math.random().toString(36).substring(2, 15) + 
-                         Math.random().toString(36).substring(2, 15);
-                // Save it to localStorage for future use
-                localStorage.setItem('evaluationAppUserId', userId);
-                console.log('Created new user ID:', userId);
-            } else {
-                console.log('Using existing user ID:', userId);
-            }
-            
-            return userId;
-        }
+        // Global flag to track initialization
+        let appInitialized = false;
         
         // Initialize IndexedDB
         async function initIndexedDB() {
@@ -592,14 +572,13 @@
         // Initialize the application
         async function initApp() {
             try {
-                // Initialize local storage first
+                // Initialize local storage
                 await initIndexedDB();
                 
-                // Set up user identification
-                currentUserId = getOrCreateUserId();
-                userInitialized = true;
+                // Mark as initialized
+                appInitialized = true;
                 
-                // After initialization, load states
+                // Load states
                 loadSavedStates();
             } catch (error) {
                 console.error('Error during initialization:', error);
@@ -650,14 +629,123 @@
         // Initialize app when the page loads
         document.addEventListener('DOMContentLoaded', initApp);
         
-        // Save current state - hybrid approach (Firestore + IndexedDB)
+        // Upload Excel file data to Firestore (base64 encoded)
+        async function uploadFileToFirestore(fileHash, fileData) {
+            try {
+                // Convert array buffer to base64 string for storage
+                const base64Data = arrayBufferToBase64(fileData.buffer);
+                
+                // Check if the file already exists
+                const fileDoc = await firestore.collection('files').doc(fileHash).get();
+                
+                if (!fileDoc.exists) {
+                    // Save file as a document in Firestore
+                    await firestore.collection('files').doc(fileHash).set({
+                        data: base64Data,
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    console.log('File uploaded to Firestore:', fileHash);
+                } else {
+                    console.log('File already exists in Firestore:', fileHash);
+                }
+                
+                // Also save locally for faster access
+                await localDB.put('files', {
+                    id: fileHash,
+                    data: fileData,
+                    timestamp: new Date().getTime()
+                });
+                
+                return true;
+            } catch (error) {
+                console.error('Error uploading file to Firestore:', error);
+                // Still save locally even if Firestore upload fails
+                try {
+                    await localDB.put('files', {
+                        id: fileHash,
+                        data: fileData,
+                        timestamp: new Date().getTime()
+                    });
+                    console.log('File saved locally after Firestore error');
+                    return true;
+                } catch (localError) {
+                    console.error('Error saving file locally:', localError);
+                    return false;
+                }
+            }
+        }
+        
+        // Convert ArrayBuffer to base64 string
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return window.btoa(binary);
+        }
+        
+        // Convert base64 string to Uint8Array
+        function base64ToUint8Array(base64) {
+            const binary = window.atob(base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return bytes;
+        }
+        
+        // Download file from Firestore
+        async function downloadFileFromFirestore(fileHash) {
+            try {
+                // First try to get from local IndexedDB for speed
+                try {
+                    const localFile = await localDB.get('files', fileHash);
+                    if (localFile && localFile.data) {
+                        console.log('File found in local storage:', fileHash);
+                        return localFile.data;
+                    }
+                } catch (localError) {
+                    console.log('File not in local storage, trying Firestore');
+                }
+                
+                // If not found locally, get from Firestore
+                const fileDoc = await firestore.collection('files').doc(fileHash).get();
+                
+                if (fileDoc.exists) {
+                    const fileData = fileDoc.data();
+                    if (fileData && fileData.data) {
+                        // Convert base64 back to Uint8Array
+                        const fileArray = base64ToUint8Array(fileData.data);
+                        
+                        // Save to local storage for future use
+                        await localDB.put('files', {
+                            id: fileHash,
+                            data: fileArray,
+                            timestamp: new Date().getTime()
+                        });
+                        
+                        console.log('File downloaded from Firestore and saved locally');
+                        return fileArray;
+                    }
+                }
+                
+                console.error('File not found in Firestore:', fileHash);
+                return null;
+            } catch (error) {
+                console.error('Error downloading file from Firestore:', error);
+                return null;
+            }
+        }
+        
+        // Save current state to Firestore with file data
         async function saveCurrentState() {
             if (!currentFileData) {
                 alert('אנא טען קובץ תחילה');
                 return;
             }
             
-            if (!userInitialized) {
+            if (!appInitialized) {
                 alert('אנא המתן לאתחול המערכת...');
                 return;
             }
@@ -694,23 +782,25 @@
                     }
                 });
                 
-                // Save file data locally in IndexedDB
-                await localDB.put('files', {
-                    id: currentFileHash,
-                    data: currentFileData,
-                    timestamp: new Date().getTime()
-                });
+                // Upload file data to Firestore
+                const fileUploaded = await uploadFileToFirestore(currentFileHash, currentFileData);
                 
-                // Create the state document for Firestore (without file data)
+                if (!fileUploaded) {
+                    loadingIndicator.style.display = 'none';
+                    alert('שגיאה בהעלאת הקובץ. נא לנסות שוב.');
+                    return;
+                }
+                
+                // Create the state document for Firestore
                 const stateData = {
                     name: stateName,
-                    fileHash: currentFileHash, // Reference to the local file
+                    fileHash: currentFileHash,
                     studentsData: simplifiedStudentsData,
                     questionsData: simplifiedQuestionsData,
                     comments: studentComments,
                     currentStudentIndex: currentStudentIndex,
                     timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                    userId: currentUserId  // Using our consistent user ID instead of Firebase Auth
+                    // No user-specific data - all states are shared
                 };
                 
                 // Save the state to Firestore
@@ -743,10 +833,10 @@
             }
         }
         
-        // Load saved states from Firebase
+        // Load saved states from Firebase - all states for all users
         async function loadSavedStates() {
-            if (!userInitialized) {
-                console.log('User not initialized yet, will load states after initialization');
+            if (!appInitialized) {
+                console.log('App not initialized yet, will load states after initialization');
                 return;
             }
             
@@ -754,9 +844,9 @@
                 // Clear the list
                 stateList.innerHTML = '';
                 
-                // Get states for the current user - simplified query that doesn't require a composite index
+                // Get ALL states - no user filtering
                 const snapshot = await firestore.collection('states')
-                    .where('userId', '==', currentUserId)
+                    .orderBy('timestamp', 'desc')
                     .get();
                 
                 if (snapshot.empty) {
@@ -764,26 +854,10 @@
                     return;
                 }
                 
-                // Get all states and manually sort them
-                let states = [];
-                snapshot.forEach(doc => {
-                    states.push({
-                        id: doc.id,
-                        data: doc.data()
-                    });
-                });
-                
-                // Sort states by timestamp (newest first) after retrieving them
-                states.sort((a, b) => {
-                    const timeA = a.data.timestamp ? a.data.timestamp.toDate().getTime() : 0;
-                    const timeB = b.data.timestamp ? b.data.timestamp.toDate().getTime() : 0;
-                    return timeB - timeA;
-                });
-                
                 // Add each state to the list
-                states.forEach(state => {
-                    const stateId = state.id;
-                    const stateData = state.data;
+                snapshot.forEach(doc => {
+                    const stateData = doc.data();
+                    const stateId = doc.id;
                     
                     const li = document.createElement('li');
                     li.className = 'state-item';
@@ -829,9 +903,9 @@
             }
         }
         
-        // Load a state
+        // Load a state including file data from Firestore
         async function loadState(stateId) {
-            if (!userInitialized) {
+            if (!appInitialized) {
                 alert('אנא המתן לאתחול המערכת...');
                 return;
             }
@@ -851,43 +925,38 @@
                 
                 const state = stateDoc.data();
                 
-                // Try to get the file data from IndexedDB
-                try {
-                    const fileData = await localDB.get('files', state.fileHash);
+                // Try to download the file from Firestore or get it from local storage
+                const fileData = await downloadFileFromFirestore(state.fileHash);
+                
+                if (fileData) {
+                    // We have the file
+                    currentFileData = fileData;
                     
-                    if (fileData && fileData.data) {
-                        // We have the file locally
-                        currentFileData = fileData.data;
-                        
-                        // Restore full state with file data
-                        currentFileHash = state.fileHash;
-                        studentsData = state.studentsData;
-                        questionsData = state.questionsData;
-                        studentComments = state.comments || {};
-                        currentStudentIndex = state.currentStudentIndex || 0;
-                        currentStateName = state.name;
-                        currentStateId = stateId;
-                        
-                        // Update UI
-                        populateStudentDropdown();
-                        showStudentReport(currentStudentIndex);
-                        stateNameInput.value = currentStateName;
-                        navigationControls.style.display = 'block';
-                        studentReport.style.display = 'block';
-                        
-                        // Update active state in list
-                        updateActiveStateInList(stateId);
-                        
-                        // Hide loading indicator
-                        loadingIndicator.style.display = 'none';
-                    } else {
-                        // We don't have the file locally - show recovery mode info
-                        restoreStateWithoutFile(state, stateId);
-                    }
-                } catch (fileError) {
-                    console.error('Error getting file from IndexedDB:', fileError);
-                    // We don't have the file locally - show recovery mode
-                    restoreStateWithoutFile(state, stateId);
+                    // Restore full state with file data
+                    currentFileHash = state.fileHash;
+                    studentsData = state.studentsData;
+                    questionsData = state.questionsData;
+                    studentComments = state.comments || {};
+                    currentStudentIndex = state.currentStudentIndex || 0;
+                    currentStateName = state.name;
+                    currentStateId = stateId;
+                    
+                    // Update UI
+                    populateStudentDropdown();
+                    showStudentReport(currentStudentIndex);
+                    stateNameInput.value = currentStateName;
+                    navigationControls.style.display = 'block';
+                    studentReport.style.display = 'block';
+                    
+                    // Update active state in list
+                    updateActiveStateInList(stateId);
+                    
+                    // Hide loading indicator
+                    loadingIndicator.style.display = 'none';
+                } else {
+                    // Could not get the file - we should never get here with our new approach
+                    loadingIndicator.style.display = 'none';
+                    alert('לא ניתן לטעון את קובץ האקסל. אנא נסה שוב מאוחר יותר.');
                 }
             } catch (error) {
                 console.error('Error loading state:', error);
@@ -896,41 +965,14 @@
             }
         }
         
-        // Helper function to restore state without file data
-        function restoreStateWithoutFile(state, stateId) {
-            // We can still show reports without the Excel file
-            currentFileHash = state.fileHash;
-            studentsData = state.studentsData;
-            questionsData = state.questionsData;
-            studentComments = state.comments || {};
-            currentStudentIndex = state.currentStudentIndex || 0;
-            currentStateName = state.name;
-            currentStateId = stateId;
-            currentFileData = null;
-            
-            // Update UI
-            populateStudentDropdown();
-            showStudentReport(currentStudentIndex);
-            stateNameInput.value = currentStateName;
-            navigationControls.style.display = 'block';
-            studentReport.style.display = 'block';
-            updateActiveStateInList(stateId);
-            
-            // Hide loading indicator
-            loadingIndicator.style.display = 'none';
-            
-            // Show recovery message
-            alert('משימת ההערכה זו נוצרה במחשב אחר. הנתונים שוחזרו אך קובץ האקסל המקורי אינו זמין במכשיר זה. ניתן לראות את הדוחות אך יש לטעון מחדש את קובץ האקסל כדי לערוך שינויים.');
-        }
-        
         // Delete a state
         async function deleteState(stateId) {
-            if (!userInitialized) {
+            if (!appInitialized) {
                 alert('אנא המתן לאתחול המערכת...');
                 return;
             }
             
-            if (!confirm('האם אתה בטוח שברצונך למחוק משימת הערכה זו?')) {
+            if (!confirm('האם אתה בטוח שברצונך למחוק משימת הערכה זו? פעולה זו תמחק את המשימה עבור כל המשתמשים.')) {
                 return;
             }
             
@@ -953,6 +995,23 @@
             }
         }
         
+        // Helper function to update active state in the list
+        function updateActiveStateInList(stateId) {
+            const stateItems = document.querySelectorAll('.state-item');
+            stateItems.forEach(item => {
+                item.classList.remove('active');
+                const deleteBtn = item.querySelector('.delete-state');
+                if (deleteBtn && deleteBtn.dataset.id === stateId) {
+                    item.classList.add('active');
+                }
+            });
+            
+            // Close sidebar on mobile
+            if (window.innerWidth <= 768) {
+                toggleSidebar();
+            }
+        }
+        
         // Reset the app
         function resetApp() {
             studentsData = [];
@@ -972,23 +1031,6 @@
             navigationControls.style.display = 'none';
             studentReport.style.display = 'none';
             fileInput.value = '';
-        }
-
-        // Helper function to update active state in the list
-        function updateActiveStateInList(stateId) {
-            const stateItems = document.querySelectorAll('.state-item');
-            stateItems.forEach(item => {
-                item.classList.remove('active');
-                const deleteBtn = item.querySelector('.delete-state');
-                if (deleteBtn && parseInt(deleteBtn.dataset.id) === stateId) {
-                    item.classList.add('active');
-                }
-            });
-            
-            // Close sidebar on mobile
-            if (window.innerWidth <= 768) {
-                toggleSidebar();
-            }
         }
 
         // Toggle sidebar
@@ -1520,5 +1562,4 @@
         }
     </script>
 </body>
-</html> 
 </html> 
